@@ -27,6 +27,7 @@ type GetTaskReply struct {
 type ReportArgs struct {
 	TaskType TaskType
 	TaskID   int
+	Success  bool
 }
 
 type ReportReply struct{}

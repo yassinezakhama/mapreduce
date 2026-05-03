@@ -153,19 +153,27 @@ func (c *Coordinator) makeReduceTask(_ *GetTaskArgs, reply *GetTaskReply) {
 }
 
 func (c *Coordinator) Report(args *ReportArgs, _ *ReportReply) error {
-	taskid, tasktype := args.TaskID, args.TaskType
+	taskid, tasktype, ok := args.TaskID, args.TaskType, args.Success
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	switch tasktype {
 	case Map:
-		if c.mapTasks[taskid].state == inProgress {
+		if !ok {
+			if c.mapTasks[taskid].state != done {
+				c.mapTasks[taskid].state = idle
+			}
+		} else if c.mapTasks[taskid].state == inProgress {
 			c.nRemMap--
 			c.mapTasks[taskid].state = done
 		}
 	case Reduce:
-		if c.reduceTasks[taskid].state == inProgress {
+		if !ok {
+			if c.reduceTasks[taskid].state != done {
+				c.reduceTasks[taskid].state = idle
+			}
+		} else if c.reduceTasks[taskid].state == inProgress {
 			c.nRemReduce--
 			c.reduceTasks[taskid].state = done
 		}

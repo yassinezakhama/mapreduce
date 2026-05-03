@@ -49,19 +49,29 @@ func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string)
 	}
 }
 
+func report(taskid int, tasktype TaskType, ok bool) bool {
+	reportargs := ReportArgs{
+		TaskID:   taskid,
+		TaskType: tasktype,
+		Success:  ok,
+	}
+	reportreply := ReportReply{}
+	return call("Coordinator.Report", &reportargs, &reportreply)
+}
+
 func handleMap(
 	mapf func(string, string) []KeyValue,
 	_ *GetTaskArgs, reply *GetTaskReply) bool {
 	filename := reply.Filename
 	file, err := os.Open(filename)
 	if err != nil {
-		log.Fatalf("cannot open %v", filename)
-		// TODO: notify coordinator
+		log.Printf("cannot open '%v'", filename)
+		return report(reply.TaskID, reply.Type, false)
 	}
 	content, err := ioutil.ReadAll(file)
 	if err != nil {
-		log.Fatalf("cannot read %v", filename)
-		// TODO: notify coordinator
+		log.Printf("cannot read '%v'", filename)
+		return report(reply.TaskID, reply.Type, false)
 	}
 	_ = file.Close()
 
@@ -76,8 +86,8 @@ func handleMap(
 	for reduceID, bucket := range grouped {
 		interfile, err := ioutil.TempFile(".", "mr-tmp-*")
 		if err != nil {
-			log.Fatalf("cannot create intermediate file")
-			// TODO: notify coordinator
+			log.Printf("cannot create intermediate file")
+			return report(reply.TaskID, reply.Type, false)
 		}
 		tmpname := interfile.Name()
 
@@ -85,25 +95,20 @@ func handleMap(
 		for _, kv := range bucket {
 			err = enc.Encode(&kv)
 			if err != nil {
-				log.Fatalf("cannot encode key/value pair %v", kv)
-				// TODO: notify coordinator
+				log.Printf("cannot encode key/value pair '%v'", kv)
+				return report(reply.TaskID, reply.Type, false)
 			}
 		}
 		_ = interfile.Close()
 		interfilename := fmt.Sprintf("mr-%v-%v", reply.TaskID, reduceID)
 		err = os.Rename(tmpname, interfilename)
 		if err != nil {
-			log.Fatalf("cannot create intermediate file")
-			// TODO: notify coordinator
+			log.Printf("cannot create intermediate file")
+			return report(reply.TaskID, reply.Type, false)
 		}
 	}
 
-	reportargs := ReportArgs{
-		TaskID:   reply.TaskID,
-		TaskType: reply.Type,
-	}
-	reportreply := ReportReply{}
-	return call("Coordinator.Report", &reportargs, &reportreply)
+	return report(reply.TaskID, reply.Type, true)
 }
 
 // for sorting by key.
@@ -124,8 +129,8 @@ func handleReduce(
 		interfname := fmt.Sprintf("mr-%d-%d", m, reduceID)
 		interf, err := os.Open(interfname)
 		if err != nil {
-			log.Fatalf("cannot open %v", interfname)
-			// TODO: notify coordinator
+			log.Printf("cannot open '%v'", interfname)
+			return report(reply.TaskID, reply.Type, false)
 		}
 		dec := json.NewDecoder(interf)
 		for {
@@ -134,7 +139,8 @@ func handleReduce(
 				if err == io.EOF {
 					break
 				}
-				log.Fatalf("cannot decode key/value pair %v", kv)
+				log.Printf("cannot decode key/value pair '%v'", kv)
+				return report(reply.TaskID, reply.Type, false)
 			}
 			intermediate = append(intermediate, kv)
 		}
@@ -145,8 +151,8 @@ func handleReduce(
 
 	ofile, err := ioutil.TempFile(".", "temp-*")
 	if err != nil {
-		log.Fatalf("cannot create an output file")
-		// TODO: notify coordinator
+		log.Printf("cannot create an output file")
+		return report(reply.TaskID, reply.Type, false)
 	}
 	tmpname := ofile.Name()
 
@@ -163,8 +169,8 @@ func handleReduce(
 		output := reducef(intermediate[i].Key, values)
 
 		if _, err := fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output); err != nil {
-			log.Fatalf("cannot write output")
-			// TODO: notify coordinator
+			log.Printf("cannot write output")
+			return report(reply.TaskID, reply.Type, false)
 		}
 
 		i = j
@@ -175,16 +181,11 @@ func handleReduce(
 	ofilename := fmt.Sprintf("mr-out-%d", reduceID)
 	err = os.Rename(tmpname, ofilename)
 	if err != nil {
-		log.Fatalf("cannot create an output file")
-		// TODO: notify coordinator
+		log.Printf("cannot create an output file")
+		return report(reply.TaskID, reply.Type, false)
 	}
 
-	reportargs := ReportArgs{
-		TaskID:   reply.TaskID,
-		TaskType: reply.Type,
-	}
-	reportreply := ReportReply{}
-	return call("Coordinator.Report", &reportargs, &reportreply)
+	return report(reply.TaskID, reply.Type, true)
 }
 
 // send an RPC request to the coordinator, wait for the response.
