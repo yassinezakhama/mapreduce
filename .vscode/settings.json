@@ -1,0 +1,22 @@
+{
+  "editor.formatOnSave": true,
+
+  "[go]": {
+    "editor.defaultFormatter": "golang.go"
+  },
+
+  "go.formatTool": "goimports",
+
+  "go.lintTool": "golangci-lint",
+
+  "go.lintOnSave": "package",
+
+  "go.vetOnSave": "package",
+
+  "go.useLanguageServer": true,
+
+  "gopls": {
+    "ui.diagnostic.staticcheck": true
+  },
+  "cSpell.words": ["ihash"]
+}
