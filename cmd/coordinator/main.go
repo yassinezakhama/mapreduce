@@ -1,12 +1,5 @@
 package main
 
-//
-// start the coordinator process, which is implemented
-// in ../mr/coordinator.go
-//
-// go run mrcoordinator.go pg*.txt
-//
-
 import (
 	"fmt"
 	"os"
@@ -22,7 +15,7 @@ func main() {
 	}
 
 	m := mr.MakeCoordinator(os.Args[1:], 10)
-	for m.Done() == false {
+	for !m.Done() {
 		time.Sleep(time.Second)
 	}
 

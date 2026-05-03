@@ -1,5 +1,4 @@
-*.so
 **/mr-tmp
-**/mrcoordinator
+*.so
 **/mrsequential
-**/mrworker
+**/main
