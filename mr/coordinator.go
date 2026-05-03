@@ -162,6 +162,7 @@ func (c *Coordinator) Report(args *ReportArgs, _ *ReportReply) error {
 	case Map:
 		if !ok {
 			if c.mapTasks[taskid].state != done {
+				log.Printf("Map Task '%d' failed; resetting to idle", args.TaskID)
 				c.mapTasks[taskid].state = idle
 			}
 		} else if c.mapTasks[taskid].state == inProgress {
@@ -171,6 +172,7 @@ func (c *Coordinator) Report(args *ReportArgs, _ *ReportReply) error {
 	case Reduce:
 		if !ok {
 			if c.reduceTasks[taskid].state != done {
+				log.Printf("Reduce Task '%d' failed; resetting to idle", args.TaskID)
 				c.reduceTasks[taskid].state = idle
 			}
 		} else if c.reduceTasks[taskid].state == inProgress {

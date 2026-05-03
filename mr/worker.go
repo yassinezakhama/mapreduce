@@ -26,34 +26,41 @@ func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string)
 		}
 
 		switch reply.Type {
-		case Exit:
-			return
-
-		case Wait:
-			time.Sleep(time.Second)
-
 		case Map:
-			if !handleMap(mapf, &args, &reply) {
+			if handleMap(mapf, reply.TaskID, reply.Filename, reply.NReduce) {
+				if !report(reply.TaskID, Map, true) {
+					return
+				}
+			} else if !report(reply.TaskID, Map, false) {
 				return
 			}
 
 		case Reduce:
-			if !handleReduce(reducef, &args, &reply) {
+			if handleReduce(reducef, reply.TaskID, reply.NMap) {
+				if !report(reply.TaskID, Reduce, true) {
+					return
+				}
+			} else if !report(reply.TaskID, Reduce, false) {
 				return
 			}
 
+		case Wait:
+			time.Sleep(time.Second)
+
+		case Exit:
+			return
+
 		default:
 			log.Fatalf("unexpected mr.TaskType: %#v", reply.Type)
-			// TODO: notify coordinator
 		}
 	}
 }
 
-func report(taskid int, tasktype TaskType, ok bool) bool {
+func report(taskid int, tasktype TaskType, success bool) bool {
 	reportargs := ReportArgs{
 		TaskID:   taskid,
 		TaskType: tasktype,
-		Success:  ok,
+		Success:  success,
 	}
 	reportreply := ReportReply{}
 	return call("Coordinator.Report", &reportargs, &reportreply)
@@ -61,25 +68,25 @@ func report(taskid int, tasktype TaskType, ok bool) bool {
 
 func handleMap(
 	mapf func(string, string) []KeyValue,
-	_ *GetTaskArgs, reply *GetTaskReply) bool {
-	filename := reply.Filename
+	taskid int, filename string, nreduce int) bool {
+
 	file, err := os.Open(filename)
 	if err != nil {
 		log.Printf("cannot open '%v'", filename)
-		return report(reply.TaskID, reply.Type, false)
+		return false
 	}
 	content, err := ioutil.ReadAll(file)
 	if err != nil {
 		log.Printf("cannot read '%v'", filename)
-		return report(reply.TaskID, reply.Type, false)
+		return false
 	}
 	_ = file.Close()
 
 	intermediate := mapf(filename, string(content))
 
-	grouped := make([][]KeyValue, reply.NReduce)
+	grouped := make([][]KeyValue, nreduce)
 	for _, kv := range intermediate {
-		reduceID := ihash(kv.Key) % reply.NReduce
+		reduceID := ihash(kv.Key) % nreduce
 		grouped[reduceID] = append(grouped[reduceID], kv)
 	}
 
@@ -87,7 +94,7 @@ func handleMap(
 		interfile, err := ioutil.TempFile(".", "mr-tmp-*")
 		if err != nil {
 			log.Printf("cannot create intermediate file")
-			return report(reply.TaskID, reply.Type, false)
+			return false
 		}
 		tmpname := interfile.Name()
 
@@ -96,19 +103,19 @@ func handleMap(
 			err = enc.Encode(&kv)
 			if err != nil {
 				log.Printf("cannot encode key/value pair '%v'", kv)
-				return report(reply.TaskID, reply.Type, false)
+				return false
 			}
 		}
 		_ = interfile.Close()
-		interfilename := fmt.Sprintf("mr-%v-%v", reply.TaskID, reduceID)
+		interfilename := fmt.Sprintf("mr-%v-%v", taskid, reduceID)
 		err = os.Rename(tmpname, interfilename)
 		if err != nil {
 			log.Printf("cannot create intermediate file")
-			return report(reply.TaskID, reply.Type, false)
+			return false
 		}
 	}
 
-	return report(reply.TaskID, reply.Type, true)
+	return true
 }
 
 // for sorting by key.
@@ -120,17 +127,16 @@ func (a byKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 func handleReduce(
 	reducef func(string, []string) string,
-	_ *GetTaskArgs, reply *GetTaskReply) bool {
-	reduceID := reply.TaskID
+	taskid int, nmap int) bool {
 
 	intermediate := []KeyValue{}
 
-	for m := 0; m < reply.NMap; m++ {
-		interfname := fmt.Sprintf("mr-%d-%d", m, reduceID)
+	for m := 0; m < nmap; m++ {
+		interfname := fmt.Sprintf("mr-%d-%d", m, taskid)
 		interf, err := os.Open(interfname)
 		if err != nil {
 			log.Printf("cannot open '%v'", interfname)
-			return report(reply.TaskID, reply.Type, false)
+			return false
 		}
 		dec := json.NewDecoder(interf)
 		for {
@@ -140,7 +146,7 @@ func handleReduce(
 					break
 				}
 				log.Printf("cannot decode key/value pair '%v'", kv)
-				return report(reply.TaskID, reply.Type, false)
+				return false
 			}
 			intermediate = append(intermediate, kv)
 		}
@@ -152,7 +158,7 @@ func handleReduce(
 	ofile, err := ioutil.TempFile(".", "temp-*")
 	if err != nil {
 		log.Printf("cannot create an output file")
-		return report(reply.TaskID, reply.Type, false)
+		return false
 	}
 	tmpname := ofile.Name()
 
@@ -170,7 +176,7 @@ func handleReduce(
 
 		if _, err := fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output); err != nil {
 			log.Printf("cannot write output")
-			return report(reply.TaskID, reply.Type, false)
+			return false
 		}
 
 		i = j
@@ -178,14 +184,14 @@ func handleReduce(
 
 	ofile.Close()
 
-	ofilename := fmt.Sprintf("mr-out-%d", reduceID)
+	ofilename := fmt.Sprintf("mr-out-%d", taskid)
 	err = os.Rename(tmpname, ofilename)
 	if err != nil {
 		log.Printf("cannot create an output file")
-		return report(reply.TaskID, reply.Type, false)
+		return false
 	}
 
-	return report(reply.TaskID, reply.Type, true)
+	return true
 }
 
 // send an RPC request to the coordinator, wait for the response.

@@ -17,11 +17,15 @@ const (
 type GetTaskArgs struct{}
 
 type GetTaskReply struct {
-	Type     TaskType
-	TaskID   int
+	Type   TaskType
+	TaskID int
+
+	// map tasks
 	Filename string
 	NReduce  int
-	NMap     int
+
+	// reduce tasks
+	NMap int
 }
 
 type ReportArgs struct {
